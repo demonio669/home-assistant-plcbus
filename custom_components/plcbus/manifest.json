@@ -1,11 +1,12 @@
 {
     "domain": "plcbus",
     "name": "Plcbus integration",
-    "documentation": "https://github.com/tikismoke/home-assistant-plcbus",
-    "issue_tracker": "https://github.com/tikismoke/home-assistant-plcbus/issues",
+    "documentation": "https://github.com/demonio669/home-assistant-plcbus",
+    "issue_tracker": "https://github.com/demonio669/home-assistant-plcbus/issues",
     "dependencies": [],
-    "version": "1.0.1",
-    "codeowners": ["@Tikismoke"],
+    "version": "1.0.2",
+    "codeowners": ["@demonio669"],
+    "iot_class": "local_polling",
     "requirements": [
       "pyserial==3.5",
       "pyudev==0.24.1"

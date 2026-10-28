@@ -135,7 +135,10 @@ class PLCBUSAPI:
             'REPORT_ALL_ID_PULSE': '1e',
             'REPORT_ONLY_ON_PULSE': '1f'}
         #instead of using serial directly, use serialHandler
-        self._ser_handler = serialHandler(serial_port_no, command_cb, message_cb)
+        try:
+            self._ser_handler = serialHandler(serial_port_no, command_cb, message_cb)
+        except Exception as err:
+            raise PLCBUSException("Cannot open PLCBUS serial port %s: %s" % (serial_port_no, err))
         self._ser_handler.start()
 
     def _valid_item(self, item):
@@ -143,35 +146,36 @@ class PLCBUSAPI:
         Check an item to have good 'HU' syntax
         Raise exception if it is not
         '''
-        h, u = (item[0].upper(), item[1])
+        if not item or len(item) < 2:
+            raise PLCBUSException("Invalid item %s, must be 'HU'" % item)
+        h = item[0].upper()
         try:
-            if not (h in self._housecodes and int(u) in self._unitcodes):
-                raise AttributeError
-        except:
-            self._log.error("Invalid item %s%s, must be 'HU'" % (h, u))
+            u = int(item[1:])
+        except (TypeError, ValueError):
+            raise PLCBUSException("Invalid item %s, must be 'HU'" % item)
+        if h not in self._housecodes or u not in self._unitcodes:
+            raise PLCBUSException("Invalid item %s%s, must be 'HU'" % (h, u))
 
     def _valid_house(self, house):
         '''
         Check an house to have good 'H' syntax
         Raise exception if it is not
         '''
-        try:
-            if house[0] not in self._housecodes:
-                raise AttributeError
-        except:
-            self._log.error("Invalid house %s, must be 'H' format, between A and P" % house[0].upper())
+        if not house or house[0].upper() not in self._housecodes:
+            raise PLCBUSException(
+                "Invalid house %s, must be 'H' format, between A and P" % (house,)
+            )
 
     def _valid_usercode(self, item):
         '''
-        Check an user code to have good 'H' syntax
+        Check an user code to have good hex syntax
         Raise exception if it is not
         '''
-        h, u = (item[0].upper(), item[1])
-        try:
-            if not (h in self._usercodes and int(u) in self._usercodes):
-                raise AttributeError
-        except:
-            self._log.error("Invalid user code %s, must be 'H' format, between 00 and FF" % h)
+        if not item or len(item) < 2:
+            raise PLCBUSException("Invalid user code %s, must be between 00 and FF" % item)
+        h, u = (item[0].upper(), item[1].upper())
+        if h not in self._usercodes or u not in self._usercodes:
+            raise PLCBUSException("Invalid user code %s, must be between 00 and FF" % item)
 
     def _convert_device_to_hex(self, item):
         if item == None or len(item) == 0:
@@ -208,21 +212,25 @@ class PLCBUSAPI:
             command = self._cmdplcbus[cmd]
         except KeyError:
             _LOGGER.error("PLCBUS Frame generation error, command does not exist  %s", cmd)
-        else:
+            return
+        try:
+            if cmd != "ALL_UNITS_OFF":
+                if item and len(item) == 1:
+                    self._valid_house(item)
+                elif item:
+                    self._valid_item(item)
             if cmd == 'ALL_UNITS_OFF':
                 plcbus_frame = '020645000800000c03'
             else:
                 plcbus_frame = '0205%s%s%s%s%s03' % (ucod,
-                    self._convert_device_to_hex(item), self._cmdplcbus[cmd],
+                    self._convert_device_to_hex(item), command,
                     self._convert_data(data1), self._convert_data(data2))
-            try:
-                #message = plcbus_frame.decode('HEX')
-                _LOGGER.debug("message before hexlify %s",plcbus_frame)
-                message = plcbus_frame
-            except TypeError:
-                _LOGGER.error("PLCBUS Frame generation error, does not result in a HEX string %s", plcbus_frame)
-            else:
-                self._ser_handler.add_to_send_queue(plcbus_frame)
+            _LOGGER.debug("message before hexlify %s", plcbus_frame)
+            self._ser_handler.add_to_send_queue(plcbus_frame)
+        except PLCBUSException as err:
+            _LOGGER.error("%s", err)
+        except (TypeError, ValueError, KeyError):
+            _LOGGER.exception("PLCBUS Frame generation error for cmd=%s item=%s", cmd, item)
                 
 
     def get_all_on_id(self, housecode, usercode):
@@ -241,7 +249,7 @@ class PLCBUSAPI:
         self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
         response = self._ser_handler.get_from_answer_queue()
         if(response):
-            _LOGGER.debug ("Hoora response received", response)
+            _LOGGER.debug("Hoora response received %s", response)
             data = int(response[10:14], 16)
             for i in range(0, 16):
                 if data >> i & 1:
